@@ -1,0 +1,52 @@
+<!-- templates/visual/resumen.html
+     Esta es la plantilla visual base. El servicio "toPDF.js" reemplaza
+     los marcadores {{...}} con el contenido real generado por la IA. -->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    body {
+      font-family: 'Poppins', Arial, sans-serif;
+      color: #1f1f2e;
+      padding: 40px;
+    }
+    h1 {
+      color: #6C4EF7; /* morado principal de Thinking */
+      border-bottom: 3px solid #3ED0D6; /* cian secundario */
+      padding-bottom: 10px;
+    }
+    .resumen {
+      font-size: 15px;
+      line-height: 1.6;
+      margin-bottom: 25px;
+    }
+    .concepto {
+      background: #f4f2ff;
+      border-left: 4px solid #6C4EF7;
+      padding: 10px 15px;
+      margin-bottom: 10px;
+      border-radius: 6px;
+    }
+    .flashcard {
+      background: #eafcfd;
+      border: 1px solid #3ED0D6;
+      padding: 12px 15px;
+      margin-bottom: 10px;
+      border-radius: 8px;
+    }
+    .flashcard .pregunta { font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>{{TITULO}}</h1>
+
+  <div class="resumen">{{RESUMEN_VISUAL}}</div>
+
+  <h2>Conceptos clave</h2>
+  {{CONCEPTOS_HTML}}
+
+  <h2>Flashcards</h2>
+  {{FLASHCARDS_HTML}}
+</body>
+</html>
