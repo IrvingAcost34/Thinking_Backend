@@ -55,9 +55,12 @@ router.post("/", upload.single("archivo"), async (req, res) => {
     // TODO (siguiente paso): aquí se dispararía el análisis con la IA,
     // usando el archivo guardado en "archivo.path".
 
+    const rutaArchivo = archivo.path;
+
     return res.json({
       mensaje: "Archivo recibido correctamente. Procesando...",
       job_id: data.id,
+      ruta_archivo: rutaArchivo,
     });
   } catch (err) {
     console.error("Error inesperado en /api/upload:", err);
