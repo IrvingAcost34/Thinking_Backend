@@ -1,57 +1,55 @@
-// src/routes/analyze.js
-// Esta ruta se encarga de analizar el contenido del documento con IA.
-//
-// Flujo (MVP):
-// 1. Recibe el "job_id" del trabajo.
-// 2. Extrae el texto del PDF.
-// 3. Le pide a la IA que identifique tema principal y conceptos clave.
-// 4. Guarda el resultado en la base de datos y actualiza el estado a "analizado".
+// src/services/ai/analyzeDocument.js
+// Le pide a Groq (gratis) que "entienda" el documento.
 
-const express = require("express");
-const supabase = require("../db/supabaseClient");
-const { extraerTextoPDF } = require("../services/extraction/pdf");
-const { analizarDocumento } = require("../services/ai/analyzeDocument");
+async function analizarDocumento(textoDocumento) {
+  const prompt = `
+Analiza el siguiente documento educativo y responde ÚNICAMENTE con un JSON válido,
+sin texto adicional, sin explicaciones, sin comillas de markdown.
 
-const router = express.Router();
+El JSON debe tener exactamente esta forma:
+{
+  "tema_principal": "string",
+  "resumen_corto": "string (máximo 3 oraciones)",
+  "conceptos_clave": ["string", "string", "..."]
+}
 
-router.post("/:job_id", async (req, res) => {
-  const { job_id } = req.params;
+Usa solo información que esté presente en el documento. No inventes datos.
+
+Documento:
+"""
+${textoDocumento}
+"""
+`;
+
+  const respuesta = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: "llama-3.3-70b-versatile",
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+
+  const datos = await respuesta.json();
+
+  if (!respuesta.ok) {
+    console.error("Error de Groq:", datos);
+    throw new Error(datos.error?.message || "Error al llamar a Groq");
+  }
+
+  const textoRespuesta = datos.choices[0].message.content
+    .replace(/```json|```/g, "")
+    .trim();
 
   try {
-    // Por simplicidad en el MVP, se asume que la ruta del archivo temporal
-    // se recibe en el cuerpo de la petición. Más adelante esto se conecta
-    // directamente con Supabase Storage.
-    const { ruta_archivo } = req.body;
-
-    if (!ruta_archivo) {
-      return res.status(400).json({ error: "Falta la ruta del archivo a analizar." });
-    }
-
-    const textoExtraido = await extraerTextoPDF(ruta_archivo);
-    const analisis = await analizarDocumento(textoExtraido);
-
-    const { error } = await supabase
-      .from("material_jobs")
-      .update({
-        estado: "analizado",
-        tema_detectado: analisis.tema_principal,
-        analisis_json: analisis,
-      })
-      .eq("id", job_id);
-
-    if (error) {
-      console.error("Error al actualizar el job:", error);
-      return res.status(500).json({ error: "No se pudo guardar el análisis." });
-    }
-
-    return res.json({
-      mensaje: "Documento analizado correctamente.",
-      analisis,
-    });
-  } catch (err) {
-    console.error("Error inesperado en /api/analyze:", err);
-    return res.status(500).json({ error: "Error inesperado al analizar el documento." });
+    return JSON.parse(textoRespuesta);
+  } catch (error) {
+    console.error("Groq no devolvió un JSON válido:", textoRespuesta);
+    throw new Error("No se pudo interpretar la respuesta de la IA.");
   }
-});
+}
 
-module.exports = router;
+module.exports = { analizarDocumento };
