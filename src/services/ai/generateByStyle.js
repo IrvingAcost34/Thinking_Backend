@@ -1,15 +1,5 @@
 // src/services/ai/generateByStyle.js
-// Este servicio toma el análisis previo del documento y le pide a la IA
-// que genere el contenido específico para el estilo de aprendizaje elegido.
-//
-// MVP: solo implementamos el estilo "visual".
-// Más adelante se agregan "auditivo" y "kinestesico" siguiendo el mismo patrón.
-
-const Anthropic = require("@anthropic-ai/sdk");
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+// Le pide a Groq que genere el contenido del estilo Visual.
 
 const PROMPTS_POR_ESTILO = {
   visual: `
@@ -37,12 +27,6 @@ Análisis del documento:
 `,
 };
 
-/**
- * Genera el contenido estructurado para un estilo de aprendizaje específico.
- * @param {object} analisisJson - Resultado previo de analizarDocumento().
- * @param {string} estilo - "visual" | "auditivo" | "kinestesico" (MVP: solo "visual").
- * @returns {Promise<object>} Contenido estructurado listo para renderizar.
- */
 async function generarContenidoPorEstilo(analisisJson, estilo) {
   const plantillaPrompt = PROMPTS_POR_ESTILO[estilo];
 
@@ -55,21 +39,33 @@ async function generarContenidoPorEstilo(analisisJson, estilo) {
     JSON.stringify(analisisJson)
   );
 
-  const respuesta = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 1500,
-    messages: [{ role: "user", content: prompt }],
+  const respuesta = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: "llama-3.3-70b-versatile",
+      messages: [{ role: "user", content: prompt }],
+    }),
   });
 
-  const textoRespuesta = respuesta.content
-    .map((bloque) => bloque.text || "")
-    .join("")
+  const datos = await respuesta.json();
+
+  if (!respuesta.ok) {
+    console.error("Error de Groq:", datos);
+    throw new Error(datos.error?.message || "Error al llamar a Groq");
+  }
+
+  const textoRespuesta = datos.choices[0].message.content
+    .replace(/```json|```/g, "")
     .trim();
 
   try {
     return JSON.parse(textoRespuesta);
   } catch (error) {
-    console.error("La IA no devolvió un JSON válido:", textoRespuesta);
+    console.error("Groq no devolvió un JSON válido:", textoRespuesta);
     throw new Error("No se pudo interpretar la respuesta de la IA.");
   }
 }
