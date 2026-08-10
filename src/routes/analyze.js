@@ -1,55 +1,48 @@
-// src/services/ai/analyzeDocument.js
-// Le pide a Groq (gratis) que "entienda" el documento.
+// src/routes/analyze.js
+// Esta ruta se encarga de analizar el contenido del documento con IA.
 
-async function analizarDocumento(textoDocumento) {
-  const prompt = `
-Analiza el siguiente documento educativo y responde ÚNICAMENTE con un JSON válido,
-sin texto adicional, sin explicaciones, sin comillas de markdown.
+const express = require("express");
+const supabase = require("../db/supabaseClient");
+const { extraerTextoPDF } = require("../services/extraction/pdf");
+const { analizarDocumento } = require("../services/ai/analyzeDocument");
 
-El JSON debe tener exactamente esta forma:
-{
-  "tema_principal": "string",
-  "resumen_corto": "string (máximo 3 oraciones)",
-  "conceptos_clave": ["string", "string", "..."]
-}
+const router = express.Router();
 
-Usa solo información que esté presente en el documento. No inventes datos.
-
-Documento:
-"""
-${textoDocumento}
-"""
-`;
-
-  const respuesta = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
-      messages: [{ role: "user", content: prompt }],
-    }),
-  });
-
-  const datos = await respuesta.json();
-
-  if (!respuesta.ok) {
-    console.error("Error de Groq:", datos);
-    throw new Error(datos.error?.message || "Error al llamar a Groq");
-  }
-
-  const textoRespuesta = datos.choices[0].message.content
-    .replace(/```json|```/g, "")
-    .trim();
+router.post("/:job_id", async (req, res) => {
+  const { job_id } = req.params;
 
   try {
-    return JSON.parse(textoRespuesta);
-  } catch (error) {
-    console.error("Groq no devolvió un JSON válido:", textoRespuesta);
-    throw new Error("No se pudo interpretar la respuesta de la IA.");
-  }
-}
+    const { ruta_archivo } = req.body;
 
-module.exports = { analizarDocumento };
+    if (!ruta_archivo) {
+      return res.status(400).json({ error: "Falta la ruta del archivo a analizar." });
+    }
+
+    const textoExtraido = await extraerTextoPDF(ruta_archivo);
+    const analisis = await analizarDocumento(textoExtraido);
+
+    const { error } = await supabase
+      .from("material_jobs")
+      .update({
+        estado: "analizado",
+        tema_detectado: analisis.tema_principal,
+        analisis_json: analisis,
+      })
+      .eq("id", job_id);
+
+    if (error) {
+      console.error("Error al actualizar el job:", error);
+      return res.status(500).json({ error: "No se pudo guardar el análisis." });
+    }
+
+    return res.json({
+      mensaje: "Documento analizado correctamente.",
+      analisis,
+    });
+  } catch (err) {
+    console.error("Error inesperado en /api/analyze:", err);
+    return res.status(500).json({ error: "Error inesperado al analizar el documento." });
+  }
+});
+
+module.exports = router;
