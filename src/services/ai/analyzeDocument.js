@@ -1,21 +1,6 @@
 // src/services/ai/analyzeDocument.js
-// Este servicio le pide a la IA (Claude) que "entienda" el documento:
-// tema principal, resumen corto y conceptos clave.
-//
-// IMPORTANTE: le pedimos a la IA que responda SOLO en formato JSON,
-// para que el resto del sistema pueda usar esa información sin ambigüedad.
+// Le pide a Groq (gratis) que "entienda" el documento.
 
-const Anthropic = require("@anthropic-ai/sdk");
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
-
-/**
- * Analiza el texto de un documento y devuelve su estructura principal.
- * @param {string} textoDocumento - Texto extraído del archivo original.
- * @returns {Promise<object>} Objeto con tema_principal, resumen_corto y conceptos_clave.
- */
 async function analizarDocumento(textoDocumento) {
   const prompt = `
 Analiza el siguiente documento educativo y responde ÚNICAMENTE con un JSON válido,
@@ -36,21 +21,33 @@ ${textoDocumento}
 """
 `;
 
-  const respuesta = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 1000,
-    messages: [{ role: "user", content: prompt }],
+  const respuesta = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: "llama-3.3-70b-versatile",
+      messages: [{ role: "user", content: prompt }],
+    }),
   });
 
-  const textoRespuesta = respuesta.content
-    .map((bloque) => bloque.text || "")
-    .join("")
+  const datos = await respuesta.json();
+
+  if (!respuesta.ok) {
+    console.error("Error de Groq:", datos);
+    throw new Error(datos.error?.message || "Error al llamar a Groq");
+  }
+
+  const textoRespuesta = datos.choices[0].message.content
+    .replace(/```json|```/g, "")
     .trim();
 
   try {
     return JSON.parse(textoRespuesta);
   } catch (error) {
-    console.error("La IA no devolvió un JSON válido:", textoRespuesta);
+    console.error("Groq no devolvió un JSON válido:", textoRespuesta);
     throw new Error("No se pudo interpretar la respuesta de la IA.");
   }
 }
