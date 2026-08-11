@@ -1,18 +1,11 @@
 // src/routes/generate.js
-// Esta ruta genera el material final para el estilo elegido por el profesor.
-//
-// Flujo (MVP: solo estilo Visual, solo salida en PDF):
-// 1. Recibe el "job_id" y el estilo elegido ("visual" en el MVP).
-// 2. Le pide a la IA que genere el contenido estructurado (JSON) para ese estilo.
-// 3. Convierte ese JSON en un PDF usando una plantilla HTML.
-// 4. Sube el PDF generado a Supabase Storage.
-// 5. Actualiza el estado del trabajo a "completado".
+// Genera el material final para el estilo elegido por el profesor.
+// En vez de un PDF, guarda las flashcards como datos (JSON) para
+// mostrarlas de forma interactiva dentro de Thinking.
 
 const express = require("express");
 const supabase = require("../db/supabaseClient");
 const { generarContenidoPorEstilo } = require("../services/ai/generateByStyle");
-const { generarPDFDesdeHTML } = require("../services/render/toPDF");
-const { subirArchivoGenerado } = require("../services/storage/supabaseStorage");
 
 const router = express.Router();
 
@@ -27,7 +20,6 @@ router.post("/:job_id", async (req, res) => {
       });
     }
 
-    // Obtenemos el análisis previo guardado en el paso anterior
     const { data: job, error: errorJob } = await supabase
       .from("material_jobs")
       .select("analisis_json")
@@ -39,22 +31,22 @@ router.post("/:job_id", async (req, res) => {
     }
 
     const contenidoVisual = await generarContenidoPorEstilo(job.analisis_json, "visual");
-    const bufferPDF = await generarPDFDesdeHTML(contenidoVisual);
 
-    const urlArchivo = await subirArchivoGenerado({
-      buffer: bufferPDF,
-      jobId: job_id,
-      estilo: "visual",
-      nombreArchivo: "Resumen-Visual.pdf",
-    });
+    const { data: materialGuardado, error: errorInsert } = await supabase
+      .from("generated_materials")
+      .insert({
+        job_id: job_id,
+        estilo: "visual",
+        tipo_archivo: "flashcards_visual",
+        contenido_json: contenidoVisual,
+      })
+      .select()
+      .single();
 
-    // Guardamos referencia del material generado
-    await supabase.from("generated_materials").insert({
-      job_id: job_id,
-      estilo: "visual",
-      tipo_archivo: "pdf",
-      url_archivo: urlArchivo,
-    });
+    if (errorInsert) {
+      console.error("Error al guardar el material:", errorInsert);
+      return res.status(500).json({ error: "No se pudo guardar el material generado." });
+    }
 
     await supabase
       .from("material_jobs")
@@ -63,7 +55,8 @@ router.post("/:job_id", async (req, res) => {
 
     return res.json({
       mensaje: "Material generado correctamente.",
-      url_archivo: urlArchivo,
+      material_id: materialGuardado.id,
+      contenido: contenidoVisual,
     });
   } catch (err) {
     console.error("Error inesperado en /api/generate:", err);
